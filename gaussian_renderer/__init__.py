@@ -16,7 +16,7 @@ from diff_gaussian_rasterization import GaussianRasterizationSettings, GaussianR
 from scene.gaussian_model import GaussianModel
 from utils.sh_utils import eval_sh
 
-def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, opt, scaling_modifier = 1.0, override_color = None):
+def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, pos_index : int, opt, scaling_modifier = 1.0, override_color = None):
     """
     Render the scene. 
     
@@ -84,9 +84,42 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
         colors_precomp = override_color
 
     if opt.include_feature:
+
+        # @torch.no_grad()
+        # def threshold_and_enhance_similarity(similarity, threshold=0.9, scale_factor=100):
+            
+        #     # enhanced_similarity = torch.where(similarity < threshold, torch.ones_like(similarity), similarity * scale_factor)
+        #     enhanced_similarity = torch.where(similarity < threshold, torch.ones_like(similarity), torch.full_like(similarity, 5))
+        #     return enhanced_similarity
+
+        @torch.no_grad()
+        def threshold_and_enhance_similarity(similarity, threshold=0.2, small_value=0.0001):
+            enhanced_similarity = torch.where(similarity < threshold, torch.full_like(similarity, small_value), torch.ones_like(similarity))
+            return enhanced_similarity
+
+
         language_feature_precomp = pc.get_language_feature
+        # print("language_feature_precomp shape", language_feature_precomp.shape)
         language_feature_precomp = language_feature_precomp/ (language_feature_precomp.norm(dim=-1, keepdim=True) + 1e-9)
         # language_feature_precomp = torch.sigmoid(language_feature_precomp)
+        normalized_similarity = torch.load('/datadrive/yingwei/LangSplat/eval/valid_map_level1.pt')
+        # self.positives ['stuffed bear', 'coffee mug', 'bag of cookies', 'sheep', 'apple', 'paper napkin', 'plate', 'tea in a glass', 'bear nose', 'three cookies', 'coffee']
+        selected_similarity = normalized_similarity[0, :,4]
+        # Normalize similarity to [0, 1]
+  
+        # Enhance the similarity values
+        enhanced_similarity = threshold_and_enhance_similarity(selected_similarity, threshold=0.45)  # Shape: (2147799,)
+
+        # Expand enhanced similarity to match language_feature_precomp dimensions
+        # Shape: (2147799,) -> (2147799, 3)
+        enhanced_similarity_expanded = enhanced_similarity.unsqueeze(1).expand(-1, 3)
+        selected_similarity = selected_similarity.unsqueeze(1).expand(-1, 3)
+        # Multiply language_feature_precomp with the expanded enhanced similarity
+
+        #language_feature_precomp = language_feature_precomp * enhanced_similarity_expanded  # Shape: (2147799, 3)
+        language_feature_precomp = selected_similarity  # Shape: (2147799, 3)
+
+
     else:
         language_feature_precomp = torch.zeros((1,), dtype=opacity.dtype, device=opacity.device)
         
