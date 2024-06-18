@@ -59,6 +59,7 @@ def eval_gt_lerfdata(json_folder: Union[str, Path] = None, ouput_path: Path = No
     gt_json_paths = sorted(glob.glob(os.path.join(str(json_folder), 'frame_*.json')))
     img_paths = sorted(glob.glob(os.path.join(str(json_folder), 'frame_*.jpg')))
     gt_ann = {}
+
     for js_path in gt_json_paths:
         img_ann = defaultdict(dict)
         with open(js_path, 'r') as f:
@@ -87,26 +88,15 @@ def eval_gt_lerfdata(json_folder: Union[str, Path] = None, ouput_path: Path = No
     return gt_ann, (h, w), img_paths
 
 
-def activate_stream(sem_map, 
+def activate_stream(scene_index,
                     image, 
                     clip_model, 
                     image_name: Path = None,
                     img_ann: Dict = None, 
                     thresh : float = 0.5, 
                     colormap_options = None):
-    valid_map = clip_model.query_3d_gaussian(sem_map)                 # 3xkx832x1264 # lvl x pos_query x H x W - original
-    torch.save(valid_map, 'valid_map_level1.pt')
-    print("valid_map shape", valid_map.shape) # torch.Size([lvl, 2147799, 11])
-    n_head, n_points, n_prompt = valid_map.shape
-    for k in range(n_prompt):
-        iou_lvl = np.zeros(n_head)
-        # mask_lvl = np.zeros((n_head, h, w))
-        for i in range (n_head):
-            np_relev = valid_map[i][:,k].cpu().numpy()
-            # for q in range(10000, 100100):
-            #     print(np_relev[q])
-            assert False
-    n_head, n_prompt, h, w = valid_map.shape # 
+    valid_map = clip_model.get_max_across(scene_index)                 # 3xkx832x1264
+    n_head, n_prompt, h, w = valid_map.shape
 
     # positive prompts
     chosen_iou_list, chosen_lvl_list = [], []
@@ -131,6 +121,13 @@ def activate_stream(sem_map,
             p_i = torch.clip(valid_map[i][k] - 0.5, 0, 1).unsqueeze(-1)
             valid_composited = colormaps.apply_colormap(p_i / (p_i.max() + 1e-6), colormaps.ColormapOptions("turbo"))
             mask = (valid_map[i][k] < 0.5).squeeze()
+            
+            device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+            # Move tensors to the correct device
+            mask = mask.to(device)
+            valid_composited = valid_composited.to(device)
+
             valid_composited[mask, :] = image[mask, :] * 0.3
             output_path_compo = image_name / 'composited' / f'{clip_model.positives[k]}_{i}'
             output_path_compo.parent.mkdir(exist_ok=True, parents=True)
@@ -141,7 +138,7 @@ def activate_stream(sem_map,
             output = output - torch.min(output)
             output = output / (torch.max(output) + 1e-9)
             output = output * (1.0 - (-1.0)) + (-1.0)
-            output = torch.clip(output, 0, 1)  
+            output = torch.clip(output, 0, 1)
 
             mask_pred = (output.cpu().numpy() > thresh).astype(np.uint8)
             mask_pred = smooth(mask_pred)
@@ -166,7 +163,10 @@ def activate_stream(sem_map,
         # save for visulsization
         save_path = image_name / f'chosen_{clip_model.positives[k]}.png'
         vis_mask_save(mask_lvl[chosen_lvl], save_path)
-
+    
+    print(chosen_iou_list)
+    print(sum(chosen_iou_list) / len(chosen_iou_list))
+    
     return chosen_iou_list, chosen_lvl_list
 
 
@@ -174,12 +174,12 @@ def lerf_localization(sem_map, image, clip_model, image_name, img_ann):
     output_path_loca = image_name / 'localization'
     output_path_loca.mkdir(exist_ok=True, parents=True)
 
-    valid_map = clip_model.get_max_across(sem_map)                 # 3xkx832x1264 # n_levels, n_phrases, h, w
+    valid_map = clip_model.get_max_across(sem_map)                 # 3xkx832x1264
     n_head, n_prompt, h, w = valid_map.shape
     
     # positive prompts
     acc_num = 0
-    positives = list(img_ann.keys()) # all the text labels
+    positives = list(img_ann.keys())
     for k in range(len(positives)):
         select_output = valid_map[:, k]
         
@@ -228,7 +228,8 @@ def lerf_localization(sem_map, image, clip_model, image_name, img_ann):
     return acc_num
 
 
-def evaluate(feat_dir, output_path, ae_ckpt_path, json_folder, mask_thresh, encoder_hidden_dims, decoder_hidden_dims, logger):
+def evaluate(feat_dir, output_path, ae_ckpt_path, json_folder, mask_thresh, encoder_hidden_dims, decoder_hidden_dims, logger, language_feature_dim):
+    import gc
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     colormap_options = colormaps.ColormapOptions(
@@ -237,24 +238,20 @@ def evaluate(feat_dir, output_path, ae_ckpt_path, json_folder, mask_thresh, enco
         colormap_min=-1.0,
         colormap_max=1.0,
     )
-    # FIXME
-    with torch.no_grad():
-        lg_tensor_1 = torch.load('language_feats_dim3_tensor_1.pt')
-        lg_stacked_tensor = torch.unsqueeze(lg_tensor_1, 0).to(device)
 
-        # #print("lg_stacked_tensor shape", lg_stacked_tensor.shape)
-        # lg_tensor_2 = torch.load('language_feats_dim3_tensor_2.pt')
-        # lg_tensor_3 = torch.load('language_feats_dim3_tensor_3.pt')
-        # lg_stacked_tensor = torch.stack([lg_tensor_1, lg_tensor_2, lg_tensor_3], dim=0).to(device)  # Choose dim=0 for a new first dimension
-    
     gt_ann, image_shape, image_paths = eval_gt_lerfdata(Path(json_folder), Path(output_path))
     eval_index_list = [int(idx) for idx in list(gt_ann.keys())]
-    # compressed_sem_feats = np.zeros((len(feat_dir), len(eval_index_list), *image_shape, 3), dtype=np.float32)
-    # print("compressed_sem_feats shape", compressed_sem_feats.shape) # compressed_sem_feats shape (3, 6, 730, 988, 3)
+    
+    #FIXME  - adjust the language feature dim here
+    # compressed_sem_feats = np.zeros((len(feat_dir), len(eval_index_list), *image_shape, language_feature_dim), dtype=np.float32)
+
+    # print("compressed_sem_feats shape", compressed_sem_feats.shape)
     # for i in range(len(feat_dir)):
     #     feat_paths_lvl = sorted(glob.glob(os.path.join(feat_dir[i], '*.npy')),
     #                            key=lambda file_name: int(os.path.basename(file_name).split(".npy")[0]))
+    #     # print("feat_paths_lvl", feat_paths_lvl)
     #     for j, idx in enumerate(eval_index_list):
+    #         #print("shape", np.load(feat_paths_lvl[idx]).shape)
     #         compressed_sem_feats[i][j] = np.load(feat_paths_lvl[idx])
 
     # instantiate autoencoder and openclip
@@ -267,6 +264,8 @@ def evaluate(feat_dir, output_path, ae_ckpt_path, json_folder, mask_thresh, enco
     chosen_iou_all, chosen_lvl_list = [], []
     acc_num = 0
     for j, idx in enumerate(tqdm(eval_index_list)):
+        gc.collect()
+        torch.cuda.empty_cache()
         image_name = Path(output_path) / f'{idx+1:0>5}'
         image_name.mkdir(exist_ok=True, parents=True)
         
@@ -276,40 +275,47 @@ def evaluate(feat_dir, output_path, ae_ckpt_path, json_folder, mask_thresh, enco
         rgb_img = (rgb_img / 255.0).astype(np.float32)
         rgb_img = torch.from_numpy(rgb_img).to(device)
 
-        with torch.no_grad():
+        # with torch.no_grad():
         #     lvl, h, w, _ = sem_feat.shape
-        #     print("sem_feat.flatten(0, 2) shape", sem_feat.flatten(0, 2).shape)
-        #     restored_feat = model.decode(sem_feat.flatten(0, 2))
+            
+        #     # restored_feat = model.decode(sem_feat.flatten(0, 2))
+        #     try:
+        #         restored_feat = model.decode(sem_feat.flatten(0, 2))
+        #     except RuntimeError as e:
+        #         if 'out of memory' in str(e):
+        #             print("CUDA out of memory. Trying again after clearing cache.")
+        #             torch.cuda.empty_cache()
+        #             gc.collect()  # 再次垃圾回收尝试解决内存不足
+        #             restored_feat = model.decode(sem_feat.flatten(0, 2))
+        #         else:
+        #             raise e
         #     restored_feat = restored_feat.view(lvl, h, w, -1)           # 3x832x1264x512
-            lg_stacked_tensor = model.decode(lg_stacked_tensor) # 3 x N x 512
+        
         
         img_ann = gt_ann[f'{idx}']
         clip_model.set_positives(list(img_ann.keys()))
         
-        
-        print("lg_stacked_tensor shape", lg_stacked_tensor.shape)
-        # print("current mem ussage", torch.cuda.mem_get_info())
-        c_iou_list, c_lvl = activate_stream(lg_stacked_tensor, rgb_img, clip_model, image_name, img_ann,
+        c_iou_list, c_lvl = activate_stream(j, rgb_img, clip_model, image_name, img_ann,
                                             thresh=mask_thresh, colormap_options=colormap_options)
         chosen_iou_all.extend(c_iou_list)
         chosen_lvl_list.extend(c_lvl)
 
+        
         # acc_num_img = lerf_localization(restored_feat, rgb_img, clip_model, image_name, img_ann)
         # acc_num += acc_num_img
-        break
-
+    
     # # iou
     mean_iou_chosen = sum(chosen_iou_all) / len(chosen_iou_all)
     logger.info(f'trunc thresh: {mask_thresh}')
     logger.info(f"iou chosen: {mean_iou_chosen:.4f}")
     logger.info(f"chosen_lvl: \n{chosen_lvl_list}")
-
-    # # localization acc
-    # total_bboxes = 0
-    # for img_ann in gt_ann.values():
-    #     total_bboxes += len(list(img_ann.keys()))
-    # acc = acc_num / total_bboxes
-    # logger.info("Localization accuracy: " + f'{acc:.4f}')
+    assert False
+    # localization acc
+    total_bboxes = 0
+    for img_ann in gt_ann.values():
+        total_bboxes += len(list(img_ann.keys()))
+    acc = acc_num / total_bboxes
+    logger.info("Localization accuracy: " + f'{acc:.4f}')
 
 
 def seed_everything(seed_value):
@@ -346,6 +352,7 @@ if __name__ == "__main__":
                         type=int,
                         default=[16, 32, 64, 128, 256, 256, 512],
                         )
+    parser.add_argument("--language_feature_dim", type=int, default=3)
     args = parser.parse_args()
 
     # NOTE config setting
@@ -355,11 +362,12 @@ if __name__ == "__main__":
     output_path = os.path.join(args.output_dir, dataset_name)
     ae_ckpt_path = os.path.join(args.ae_ckpt_dir, dataset_name, "best_ckpt.pth")
     json_folder = os.path.join(args.json_folder, dataset_name)
-
+    language_feature_dim = args.language_feature_dim
+    
     # NOTE logger
     timestamp = time.strftime('%Y%m%d_%H%M%S', time.localtime())
     os.makedirs(output_path, exist_ok=True)
     log_file = os.path.join(output_path, f'{timestamp}.log')
     logger = get_logger(f'{dataset_name}', log_file=log_file, log_level=logging.INFO)
 
-    evaluate(feat_dir, output_path, ae_ckpt_path, json_folder, mask_thresh, args.encoder_dims, args.decoder_dims, logger)
+    evaluate(feat_dir, output_path, ae_ckpt_path, json_folder, mask_thresh, args.encoder_dims, args.decoder_dims, logger, language_feature_dim)
