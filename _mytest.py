@@ -33,7 +33,11 @@ def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParam
         gaussians.restore(model_params, args, mode='test')
         
         print(np.shape(gaussians.get_language_feature)) # torch.Size([2147799, 3])
-        torch.save(gaussians.get_language_feature, 'language_feats_dim3_tensor_1.pt')
+        language_feature_precomp = gaussians.get_language_feature
+        language_feature_precomp = language_feature_precomp/ (language_feature_precomp.norm(dim=-1, keepdim=True) + 1e-9)
+        #torch.save(language_feature_precomp, 'language_feats_dim3_tensor_1.pt')
+        #torch.save(language_feature_precomp, 'language_feats_dim3_tensor_2.pt')
+        torch.save(language_feature_precomp, 'language_feats_dim3_tensor_1.pt')
         # compressed_sem_feats shape (3, 6, 730, 988, 3)
         # bg_color = [1,1,1] if dataset.white_background else [0, 0, 0]
         # background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
