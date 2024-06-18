@@ -2,7 +2,7 @@
 import torch
 import torchvision
 import open_clip
-
+import numpy as np
 
 class OpenCLIPNetwork:
     def __init__(self, device):
@@ -31,82 +31,119 @@ class OpenCLIPNetwork:
         self.negatives = ("object", "things", "stuff", "texture")
         self.positives = (" ",)
         with torch.no_grad():
-            tok_phrases = torch.cat([self.tokenizer(phrase) for phrase in self.positives]).to(device) # tokenlization
-            self.pos_embeds = model.encode_text(tok_phrases)    # convert it into embeddings
+            tok_phrases = torch.cat([self.tokenizer(phrase) for phrase in self.positives]).to(device)
+            self.pos_embeds = model.encode_text(tok_phrases)
             tok_phrases = torch.cat([self.tokenizer(phrase) for phrase in self.negatives]).to(device)
             self.neg_embeds = model.encode_text(tok_phrases)
         self.pos_embeds /= self.pos_embeds.norm(dim=-1, keepdim=True)
         self.neg_embeds /= self.neg_embeds.norm(dim=-1, keepdim=True)
-        
-    @torch.no_grad()
-    def get_relevancy(self, embed: torch.Tensor, positive_id: int) -> torch.Tensor:
-        # embed shape: (HxW, 512)
-        # embed: 32768x512
-        phrases_embeds = torch.cat([self.pos_embeds, self.neg_embeds], dim=0) #  combine pos and neg embeddings
-        p = phrases_embeds.to(embed.dtype)
-        output = torch.mm(embed, p.T) # matrix mul
-        positive_vals = output[..., positive_id : positive_id + 1] # select the corresponding positive output
-        negative_vals = output[..., len(self.positives) :] # all remainings are negative output
-        repeated_pos = positive_vals.repeat(1, len(self.negatives)) # why repeat here? #QUESTION #FIXME
 
-        sims = torch.stack((repeated_pos, negative_vals), dim=-1)
-        softmax = torch.softmax(10 * sims, dim=-1) # sharpen the results
-        best_id = softmax[..., 0].argmin(dim=1)
-        return torch.gather(softmax, 1, best_id[..., None, None].expand(best_id.shape[0], len(self.negatives), 2))[:, 0, :]
-    
     @torch.no_grad()
-    # this is with negative embeddings
-    def get_3d_relevancy(self, embed: torch.Tensor, positive_id: int) -> torch.Tensor:
+    def get_relevancy(self, positive_id: int, scene_index) -> torch.Tensor:
+        # # embed: 32768x512
+        # phrases_embeds = torch.cat([self.pos_embeds, self.neg_embeds], dim=0)
+        # p = phrases_embeds.to(embed.dtype)
+        # output = torch.mm(embed, p.T)
+        # positive_vals = output[..., positive_id : positive_id + 1]
+        # # positive_vals = np.load('/datadrive/yingwei/LangSplat_new/dataset/lerf_ovs/teatime/output/teatime_3_pos/train/stuffed bear/ours_None/renders_npy/00001.npy')
+        # negative_vals = output[..., len(self.positives) :]
+        # repeated_pos = positive_vals.repeat(1, len(self.negatives))
+
+        # sims = torch.stack((repeated_pos, negative_vals), dim=-1)
+        # print("this is the sim shape", sims.shape)
+        # softmax = torch.softmax(10 * sims, dim=-1)
+        
+        # print("this is the softmax shape", softmax.shape)
+        # best_id = softmax[..., 0].argmin(dim=1)
+        # return torch.gather(softmax, 1, best_id[..., None, None].expand(best_id.shape[0], len(self.negatives), 2))[
+        #     :, 0, :
+        # ]
         """
-        Compute the relevancy of the embedding to the positive and negative text embeddings.
+        Compute the relevancy of the embedding to the positive text embeddings.
         :param embed: Tensor of shape (N, 512), where N is the number of Gaussian points.
         :param positive_id: Index of the positive embedding to compare.
-        :return: Relevancy tensor of shape (N, 2).
+        :return: Relevancy tensor of shape (N, 1).
         """
-        phrases_embeds = torch.cat([self.pos_embeds, self.neg_embeds], dim=0)
-        p = phrases_embeds.to(embed.dtype)
+        # ***** prev version *****
+        # scene_lst_int = [1,24,42,106,128,139]
+        # scene_lst = ['00001', '00024','00042','00106','00128','00139']
         
-        # Compute similarities
-        output = torch.mm(embed, p.T)
-         
-        # Extract positive and negative similarities
-        positive_vals = output[..., positive_id : positive_id + 1]
-        negative_vals = output[..., len(self.positives) :]
+        # positives_lst = [
+        #     ['stuffed bear', 'coffee mug', 'bag of cookies', 'sheep', 'apple', 'paper napkin', 'plate', 'tea in a glass', 'bear nose', 'three cookies', 'coffee'],
+        #     ['stuffed bear', 'sheep', 'bag of cookies', 'tea in a glass', 'coffee mug', 'plate', 'three cookies', 'hooves', 'paper napkin', 'coffee', 'bear nose'],
+        #     ['tea in a glass', 'hooves', 'stuffed bear', 'bag of cookies', 'paper napkin', 'plate', 'apple', 'coffee mug', 'coffee', 'three cookies'],
+        #     ['stuffed bear', 'sheep', 'apple', 'bag of cookies', 'coffee mug', 'tea in a glass', 'bear nose', 'plate', 'three cookies', 'dall-e brand', 'paper napkin'],
+        #     ['tea in a glass', 'apple', 'yellow pouf', 'sheep', 'three cookies', 'plate', 'dall-e brand'],
+        #     ['tea in a glass', 'paper napkin', 'apple', 'stuffed bear', 'bag of cookies', 'plate', 'coffee mug', 'coffee', 'three cookies']
+        # ]
+        # ***** pre version *****
         
-        # Stack positive and negative similarities for softmax calculation
-        sims = torch.cat((positive_vals, negative_vals), dim=-1)
-        
-        repeated_pos = positive_vals.repeat(1, len(self.negatives)) # why repeat here? #QUESTION #FIXME
+        scene_lst_int = [40, 104, 151, 194]
+        scene_lst = [f'{num:05d}' for num in scene_lst_int]
+        positives_lst = [['old camera', 'toy elephant', 'waldo', 'tesla door handle', 'porcelain hand', 'rubber duck with hat', 'rubber duck with buoy', 'pink ice cream', 'red toy chair', 'green apple', 'pikachu', 'red apple', 'spatula', 'jake', 'toy cat statue', 'pirate hat', 'miffy'],
+                         ['rubics cube', 'green apple', 'green toy chair', 'jake', 'old camera', 'pink ice cream', 'pumpkin', 'red apple', 'rubber duck with hat', 'tesla door handle', 'spatula', 'rubber duck with buoy', 'pirate hat'],
+                         ['rubber duck with hat', 'rubics cube', 'toy elephant', 'green apple', 'jake', 'toy cat statue', 'pikachu', 'porcelain hand', 'red apple', 'waldo', 'pirate hat'],
+                         ['toy elephant', 'pink ice cream', 'porcelain hand', 'green apple', 'green toy chair', 'old camera', 'rubics cube', 'spatula', 'toy cat statue', 'waldo', 'rubber duck with buoy', 'pirate hat', 'miffy', 'bag', 'rubber duck with hat']]
 
-        sims = torch.stack((repeated_pos, negative_vals), dim=-1)
-        softmax = torch.softmax(30 * sims, dim=-1) # sharpen the results
+                    
+        # Map positive_id to the corresponding file path
+        level = 2
+        case_name = "figurines"
+        positive_name = positives_lst[scene_index][positive_id]
+        # positive_path = f"/datadrive/yingwei/LangSplat_prev_generate_maps/dataset/lerf_ovs/teatime/output/teatime_{level}_pos/train/scene_{scene_lst_int[scene_index]+1}/{positive_name}/ours_None/renders_npy/{scene_lst[scene_index]}.npy"
+        positive_path = f"/datadrive/yingwei/LangSplat_prev_generate_maps/dataset/lerf_ovs/{case_name}/output/{case_name}_{level}/train/scene_{scene_lst_int[scene_index]}/{positive_name}/ours_None/renders_npy/{scene_lst[scene_index]}.npy"
+    
+        all_values = np.load(positive_path)
+        
+        # print("positive_vals shape", positive_vals.shape)
+        # assert False
+
+        # Extract positive values (first dimension) and negative values (remaining dimensions)
+        positive_vals = all_values[:, :,0:1].reshape(-1, 1)
+        negative_vals = all_values[:, :,1:].reshape(-1, all_values.shape[-1] - 1)
+        
+
+        # Repeat positive values for comparison
+        repeated_pos = np.repeat(positive_vals, negative_vals.shape[1], axis=1)
+        
+        # Convert numpy arrays to PyTorch tensors
+        repeated_pos_tensor = torch.tensor(repeated_pos, dtype=torch.float32)
+        negative_vals_tensor = torch.tensor(negative_vals, dtype=torch.float32)
+
+        # ****** recover ******
+        # negative_paths = {
+        #     "object": f"/datadrive/yingwei/LangSplat_prev_generate_maps/dataset/lerf_ovs/teatime/output/teatime_{level}_negative/object/renders_npy/{scene_lst[scene_index]}.npy",
+        #     "things": f"/datadrive/yingwei/LangSplat_prev_generate_maps/dataset/lerf_ovs/teatime/output/teatime_{level}_negative/things/renders_npy/{scene_lst[scene_index]}.npy",
+        #     "stuff": f"/datadrive/yingwei/LangSplat_prev_generate_maps/dataset/lerf_ovs/teatime/output/teatime_{level}_negative/stuff/renders_npy/{scene_lst[scene_index]}.npy",
+        #     "texture": f"/datadrive/yingwei/LangSplat_prev_generate_maps/dataset/lerf_ovs/teatime/output/teatime_{level}_negative/texture/renders_npy/{scene_lst[scene_index]}.npy"
+        # }
+        
+        # negative_vals = []
+        # for key in negative_paths:
+        #     negative_val = np.load(negative_paths[key])
+        #     extracted_val = negative_val[:, :, 0:1]
+        #     negative_vals.append(extracted_val)
+        
+        # concatenated_negatives = np.concatenate(negative_vals, axis=-1)
+        
+        # positive_vals = positive_vals[:, :, 0:1].reshape(-1, 1)
+        # negative_vals = concatenated_negatives.reshape(-1, len(negative_paths))
+        
+        # repeated_pos = np.repeat(positive_vals, len(negative_paths), axis=1)
+        
+        # repeated_pos_tensor = torch.tensor(repeated_pos, dtype=torch.float32)
+        # negative_vals_tensor = torch.tensor(negative_vals, dtype=torch.float32)
+
+        # sims = torch.stack((repeated_pos_tensor, negative_vals_tensor), dim=-1)
+        # ****** recover ******
+        sims = torch.stack((repeated_pos_tensor, negative_vals_tensor), dim=-1)
+        softmax = torch.softmax(10 * sims, dim=-1)  # sharpen the results
         best_id = softmax[..., 0].argmin(dim=1)
         
         # Gather the results based on the best_id
-        return torch.gather(softmax, 1, best_id[..., None, None].expand(best_id.shape[0], len(self.negatives) + 1, 2))[:, 0, :]
-
-
-    # @torch.no_grad()
-    # def get_3d_relevancy(self, embed: torch.Tensor, positive_id: int) -> torch.Tensor:
-    #     """
-    #     Compute the relevancy of the embedding to the positive text embeddings.
-    #     :param embed: Tensor of shape (N, 512), where N is the number of Gaussian points.
-    #     :param positive_id: Index of the positive embedding to compare.
-    #     :return: Relevancy tensor of shape (N, 1).
-    #     """
-    #     # Ensure the positive embeddings are in the same data type as the embed
-    #     p = self.pos_embeds.to(embed.dtype)
+        result = torch.gather(softmax, 1, best_id[..., None, None].expand(best_id.shape[0], len(self.negatives), 2))[:, 0, :]
         
-    #     # Compute similarities
-    #     output = torch.mm(embed, p.T)
-        
-    #     # Extract positive similarities
-    #     positive_vals = output[..., positive_id : positive_id + 1]
-        
-    #     # Apply softmax to sharpen the results
-    #     softmax = torch.softmax(100 * positive_vals, dim=-1)
-        
-    #     return positive_vals
+        return result
 
 
     def encode_image(self, input, mask=None):
@@ -147,51 +184,54 @@ class OpenCLIPNetwork:
             sem_pred[i][sem_pred[i] >= pos_num] = -1
         return sem_pred.long()
 
+    def get_max_across(self, scene_index):
+        # n_phrases = len(self.positives)
+        # n_phrases_sims = [None for _ in range(n_phrases)]
+        
+        # n_levels, h, w, _ = sem_map.shape
+        # clip_output = sem_map.permute(1, 2, 0, 3).flatten(0, 1)
 
-    def get_max_across(self, sem_map):
-        # sem shape - (lvl, h, w, 512)        
+        # n_levels_sims = [None for _ in range(n_levels)]
+        # for i in range(n_levels):
+        #     for j in range(n_phrases):
+        #         probs = self.get_relevancy(clip_output[..., i, :], j)
+        #         pos_prob = probs[..., 0:1]
+        #         n_phrases_sims[j] = pos_prob
+        #     n_levels_sims[i] = torch.stack(n_phrases_sims)
+        
+        # relev_map = torch.stack(n_levels_sims).view(n_levels, n_phrases, h, w)
+        # return relev_map
+        
+        
         n_phrases = len(self.positives)
         n_phrases_sims = [None for _ in range(n_phrases)]
         
-        n_levels, h, w, _ = sem_map.shape
-        clip_output = sem_map.permute(1, 2, 0, 3).flatten(0, 1) # (HxW, 3, 512)
+        n_levels, h, w = 1, 728, 986
 
         n_levels_sims = [None for _ in range(n_levels)]
         for i in range(n_levels):
             for j in range(n_phrases):
-                probs = self.get_relevancy(clip_output[..., i, :], j) # cal each feature level
+                probs = self.get_relevancy(j, scene_index) # cal each feature level
                 pos_prob = probs[..., 0:1]
+                # print("pos_prob", pos_prob.shape)
                 n_phrases_sims[j] = pos_prob
+                pos_prob = pos_prob.view(h, w)
+                
+                # greyscale_image = (pos_prob.numpy() * 255).astype(np.uint8)
+
+                # # Create a PIL image from the NumPy array
+                # image = Image.fromarray(greyscale_image, mode='L')
+
+                # # Save the image
+                # image.save('greyscale_image.png')
+
+                # torch.save(pos_prob, 'pos_prob_bear.pt')
+                # assert False
+                # print(pos_prob)
             n_levels_sims[i] = torch.stack(n_phrases_sims)
-        
         relev_map = torch.stack(n_levels_sims).view(n_levels, n_phrases, h, w)
+        print("relev_map", relev_map.shape)
+
         return relev_map
     
     
-    def query_3d_gaussian(self, gaussian_features: torch.Tensor) -> torch.Tensor:
-        """
-        Compute the similarity between 3D Gaussian points and text queries and activate based on a threshold.
-        :param gaussian_features: Tensor of shape (level, N, 512), where level is the number of levels, 
-                                  N is the number of 3D Gaussian points, and 512 is the feature dimension.
-        :return: Tensor indicating which Gaussian points are activated.
-        """
-
-        print("self.positives", self.positives)
-        n_phrases = len(self.positives)  # Number of positive phrases
-        n_levels = gaussian_features.shape[0]  # Number of levels
-        n_points = gaussian_features.shape[1]  # Number of 3D Gaussian points
-
-        relevancies = []
-        for i in range(n_levels):
-            level_relevancies = []
-            for j in range(n_phrases):
-                relevancy = self.get_3d_relevancy(gaussian_features[i], j)
-                level_relevancies.append(relevancy)
-            relevancies.append(torch.stack(level_relevancies, dim=1))  # Shape: (N, n_phrases, 2)
-        
-        relev_map = torch.stack(relevancies, dim=0)  # Shape: (level, N, n_phrases, 2)
-        
-        # Apply threshold to determine which Gaussian points are activated
-        activated_map = relev_map[..., 0] # Shape: (level, N, n_phrases)
-        
-        return activated_map
