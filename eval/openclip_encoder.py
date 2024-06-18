@@ -2,8 +2,19 @@
 import torch
 import torchvision
 import open_clip
+import torch.nn.functional as F
+import torch.nn as nn
 
+class SimpleFeatureEnhancer:
+    def __init__(self, feature_dim):
+        self.weight = torch.nn.Parameter(torch.randn(feature_dim, feature_dim).cuda())
+        self.bias = torch.nn.Parameter(torch.randn(feature_dim).cuda())
 
+    def enhance(self, features):
+        # 简单的线性变换和非线性激活
+        enhanced_features = F.relu(torch.matmul(features, self.weight) + self.bias)
+        return enhanced_features
+        
 class OpenCLIPNetwork:
     def __init__(self, device):
         self.process = torchvision.transforms.Compose(
@@ -27,7 +38,8 @@ class OpenCLIPNetwork:
         
         self.tokenizer = open_clip.get_tokenizer(self.clip_model_type)
         self.model = model.to(device)
-
+        
+        # object
         self.negatives = ("object", "things", "stuff", "texture")
         self.positives = (" ",)
         with torch.no_grad():
@@ -54,60 +66,132 @@ class OpenCLIPNetwork:
         best_id = softmax[..., 0].argmin(dim=1)
         return torch.gather(softmax, 1, best_id[..., None, None].expand(best_id.shape[0], len(self.negatives), 2))[:, 0, :]
     
+    # @torch.no_grad()
+    # # this is with negative embeddings
+    # def get_3d_relevancy(self, embed: torch.Tensor, positive_id: int) -> torch.Tensor:
+    #     """
+    #     Compute the relevancy of the embedding to the positive and negative text embeddings.
+    #     :param embed: Tensor of shape (N, 512), where N is the number of Gaussian points.
+    #     :param positive_id: Index of the positive embedding to compare.
+    #     :return: Relevancy tensor of shape (N, 2).
+    #     """
+    #     phrases_embeds = torch.cat([self.pos_embeds, self.neg_embeds], dim=0)
+    #     p = phrases_embeds.to(embed.dtype)
+    #     # print("phrases_embeds shape", phrases_embeds.shape)
+
+    #     embed_norm = embed / (embed.norm(dim=-1, keepdim=True) + 1e-9)
+
+    #     # feature_enhancer = SimpleFeatureEnhancer(512)
+    #     # embed_norm = feature_enhancer.enhance(embed_norm)
+    #     # Compute similarities
+    #     output = torch.mm(embed_norm, p.T)
+         
+    #     # Extract positive and negative similarities
+    #     positive_vals = output[..., positive_id : positive_id + 1]
+    #     negative_vals = output[..., len(self.positives) :]
+        
+    #     # Stack positive and negative similarities for softmax calculation
+    #     sims = torch.cat((positive_vals, negative_vals), dim=-1)
+        
+    #     repeated_pos = positive_vals.repeat(1, len(self.negatives)) # why repeat here? #QUESTION #FIXME
+
+    #     sims = torch.stack((repeated_pos, negative_vals), dim=-1)
+    #     softmax = torch.softmax(10*sims, dim=-1) # sharpen the results
+    #     best_id = softmax[..., 0].argmin(dim=1)
+        
+    #     # Gather the results based on the best_id
+    #     # return torch.gather(softmax, 1, best_id[..., None, None].expand(best_id.shape[0], len(self.negatives) + 1, 2))[:, 0, :]
+    #             # Print intermediate results for debugging
+    #     # print("Best ID shape:", best_id.shape)
+    #     # print("Softmax shape:", softmax.shape)
+    #     # print("Best ID expanded shape:", best_id[..., None, None].expand(best_id.shape[0], len(self.neg_embeds) + 1, 2).shape)
+        
+    #     # # Gather the results based on the best_id
+    #     # result = torch.gather(softmax, 1, best_id[..., None, None].expand(best_id.shape[0], len(self.neg_embeds) + 1, 2))[:, 0, :]
+    #     # print("Result shape:", result.shape)
+        
+    #     # return result
+        
+    #             # Apply softmax to sharpen the results
+    #     # softmax = torch.softmax(sims, dim=-1) # sharpen the results
+    #     # best_id = softmax[..., 0].argmin(dim=1)
+        
+    #     # Gather the results based on the best_id
+    #     # return torch.gather(softmax, 1, best_id[..., None, None].expand(best_id.shape[0], len(self.negatives) + 1, 2))[:, 0, :]
+    #             # Print intermediate results for debugging
+    #     #print("Best ID shape:", best_id.shape)
+    #     #print("Softmax shape:", softmax.shape)
+    #     #print("Best ID expanded shape:", best_id[..., None, None].expand(best_id.shape[0], len(self.neg_embeds) + 1, 2).shape)
+        
+    #     # Gather the results based on the best_id
+    #     result = torch.gather(softmax, 1, best_id[..., None, None].expand(best_id.shape[0], len(self.neg_embeds) + 1, 2))[:, 0, :]
+    #     #print("Result shape:", result.shape)
+        
+    #     return result
+    
+    
+
+
+    
+
+    
     @torch.no_grad()
-    # this is with negative embeddings
     def get_3d_relevancy(self, embed: torch.Tensor, positive_id: int) -> torch.Tensor:
         """
-        Compute the relevancy of the embedding to the positive and negative text embeddings.
+        Compute the relevancy of the embedding to the positive text embeddings.
         :param embed: Tensor of shape (N, 512), where N is the number of Gaussian points.
         :param positive_id: Index of the positive embedding to compare.
-        :return: Relevancy tensor of shape (N, 2).
+        :return: Relevancy tensor of shape (N, 1).
         """
-        phrases_embeds = torch.cat([self.pos_embeds, self.neg_embeds], dim=0)
+        # Ensure the positive embeddings are in the same data type as the embed
+        phrases_embeds = torch.cat([self.pos_embeds, self.neg_embeds], dim=0) #  combine pos and neg embeddings
         p = phrases_embeds.to(embed.dtype)
+        print("self.pos_embeds shape", self.pos_embeds.shape)
+        print("p shape", p.shape)
         
         # Compute similarities
         output = torch.mm(embed, p.T)
-         
-        # Extract positive and negative similarities
+        
+        print("output", output.shape)
+        # Extract positive similarities
         positive_vals = output[..., positive_id : positive_id + 1]
         negative_vals = output[..., len(self.positives) :]
-        
-        # Stack positive and negative similarities for softmax calculation
-        sims = torch.cat((positive_vals, negative_vals), dim=-1)
-        
         repeated_pos = positive_vals.repeat(1, len(self.negatives)) # why repeat here? #QUESTION #FIXME
 
-        sims = torch.stack((repeated_pos, negative_vals), dim=-1)
-        softmax = torch.softmax(30 * sims, dim=-1) # sharpen the results
+        print("positive_vals shape", positive_vals.shape)
+        print("repeated_pos shape", repeated_pos.shape) # repeated_pos shape torch.Size([2147799, 4])
+        print("negative_vals shape", negative_vals.shape) # negative_vals shape torch.Size([2147799, 4])
+        sims = torch.stack((repeated_pos, negative_vals), dim=-1) # sim shape torch.Size([2147799, 4, 2])
+        
+        # Apply softmax to sharpen the results
+        # softmax = torch.softmax(10*positive_vals, dim=-1)
+        
+        print("sim shape", sims.shape)
+        
+        stacked_sim = torch.cat((positive_vals, negative_vals), dim=1)
+        
+        #return negative_vals[...,0].unsqueeze(1)
+        # return negative_vals[...,0].unsqueeze(1)
+        
+                        # Apply softmax to sharpen the results
+        softmax = torch.softmax(10*sims, dim=-1) # sharpen the results
         best_id = softmax[..., 0].argmin(dim=1)
         
         # Gather the results based on the best_id
-        return torch.gather(softmax, 1, best_id[..., None, None].expand(best_id.shape[0], len(self.negatives) + 1, 2))[:, 0, :]
-
-
-    # @torch.no_grad()
-    # def get_3d_relevancy(self, embed: torch.Tensor, positive_id: int) -> torch.Tensor:
-    #     """
-    #     Compute the relevancy of the embedding to the positive text embeddings.
-    #     :param embed: Tensor of shape (N, 512), where N is the number of Gaussian points.
-    #     :param positive_id: Index of the positive embedding to compare.
-    #     :return: Relevancy tensor of shape (N, 1).
-    #     """
-    #     # Ensure the positive embeddings are in the same data type as the embed
-    #     p = self.pos_embeds.to(embed.dtype)
+        # return torch.gather(softmax, 1, best_id[..., None, None].expand(best_id.shape[0], len(self.negatives) + 1, 2))[:, 0, :]
+                # Print intermediate results for debugging
+        #print("Best ID shape:", best_id.shape)
+        #print("Softmax shape:", softmax.shape)
+        #print("Best ID expanded shape:", best_id[..., None, None].expand(best_id.shape[0], len(self.neg_embeds) + 1, 2).shape)
         
-    #     # Compute similarities
-    #     output = torch.mm(embed, p.T)
+        # Gather the results based on the best_id
+        result = torch.gather(softmax, 1, best_id[..., None, None].expand(best_id.shape[0], len(self.neg_embeds) + 1, 2))[:, 0, :]
+        #print("Result shape:", result.shape)
         
-    #     # Extract positive similarities
-    #     positive_vals = output[..., positive_id : positive_id + 1]
-        
-    #     # Apply softmax to sharpen the results
-    #     softmax = torch.softmax(100 * positive_vals, dim=-1)
-        
-    #     return positive_vals
-
+        # print("neg values", negative_vals[...,3].unsqueeze(1).shape)
+        # return positive_vals
+        return negative_vals[...,3].unsqueeze(1)
+    
 
     def encode_image(self, input, mask=None):
         processed_input = self.process(input).half()
