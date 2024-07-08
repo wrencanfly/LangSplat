@@ -136,7 +136,7 @@ class OpenCLIPNetwork:
 
     
     @torch.no_grad()
-    def get_3d_relevancy(self, embed: torch.Tensor, positive_id: int) -> torch.Tensor:
+    def get_3d_relevancy(self, embed: torch.Tensor, positive_id: int, query_dim) -> torch.Tensor:
         """
         Compute the relevancy of the embedding to the positive text embeddings.
         :param embed: Tensor of shape (N, 512), where N is the number of Gaussian points.
@@ -153,44 +153,13 @@ class OpenCLIPNetwork:
         output = torch.mm(embed, p.T)
         
         print("output", output.shape)
-        # Extract positive similarities
-        positive_vals = output[..., positive_id : positive_id + 1]
-        negative_vals = output[..., len(self.positives) :]
-        repeated_pos = positive_vals.repeat(1, len(self.negatives)) # why repeat here? #QUESTION #FIXME
 
-        print("positive_vals shape", positive_vals.shape)
-        print("repeated_pos shape", repeated_pos.shape) # repeated_pos shape torch.Size([2147799, 4])
-        print("negative_vals shape", negative_vals.shape) # negative_vals shape torch.Size([2147799, 4])
-        sims = torch.stack((repeated_pos, negative_vals), dim=-1) # sim shape torch.Size([2147799, 4, 2])
-        
-        # Apply softmax to sharpen the results
-        # softmax = torch.softmax(10*positive_vals, dim=-1)
-        
-        print("sim shape", sims.shape)
-        
-        stacked_sim = torch.cat((positive_vals, negative_vals), dim=1)
-        
-        #return negative_vals[...,0].unsqueeze(1)
-        # return negative_vals[...,0].unsqueeze(1)
-        
-                        # Apply softmax to sharpen the results
-        softmax = torch.softmax(10*sims, dim=-1) # sharpen the results
-        best_id = softmax[..., 0].argmin(dim=1)
-        
-        # Gather the results based on the best_id
-        # return torch.gather(softmax, 1, best_id[..., None, None].expand(best_id.shape[0], len(self.negatives) + 1, 2))[:, 0, :]
-                # Print intermediate results for debugging
-        #print("Best ID shape:", best_id.shape)
-        #print("Softmax shape:", softmax.shape)
-        #print("Best ID expanded shape:", best_id[..., None, None].expand(best_id.shape[0], len(self.neg_embeds) + 1, 2).shape)
-        
-        # Gather the results based on the best_id
-        result = torch.gather(softmax, 1, best_id[..., None, None].expand(best_id.shape[0], len(self.neg_embeds) + 1, 2))[:, 0, :]
-        #print("Result shape:", result.shape)
-        
-        # print("neg values", negative_vals[...,3].unsqueeze(1).shape)
-        # return positive_vals
-        return negative_vals[...,3].unsqueeze(1)
+        if query_dim == -1: # represent the pos query sim
+            positive_vals = output[..., positive_id : positive_id + 1]
+            return positive_vals
+        else:
+            negative_vals = output[..., len(self.positives) :]
+            return negative_vals[..., query_dim].unsqueeze(1)
     
 
     def encode_image(self, input, mask=None):
@@ -252,7 +221,7 @@ class OpenCLIPNetwork:
         return relev_map
     
     
-    def query_3d_gaussian(self, gaussian_features: torch.Tensor) -> torch.Tensor:
+    def query_3d_gaussian(self, gaussian_features: torch.Tensor, query_dim) -> torch.Tensor:
         """
         Compute the similarity between 3D Gaussian points and text queries and activate based on a threshold.
         :param gaussian_features: Tensor of shape (level, N, 512), where level is the number of levels, 
@@ -269,7 +238,7 @@ class OpenCLIPNetwork:
         for i in range(n_levels):
             level_relevancies = []
             for j in range(n_phrases):
-                relevancy = self.get_3d_relevancy(gaussian_features[i], j)
+                relevancy = self.get_3d_relevancy(gaussian_features[i], j, query_dim=query_dim)
                 level_relevancies.append(relevancy)
             relevancies.append(torch.stack(level_relevancies, dim=1))  # Shape: (N, n_phrases, 2)
         

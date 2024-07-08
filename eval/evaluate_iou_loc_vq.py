@@ -16,6 +16,8 @@ import torch
 import time
 from tqdm import tqdm
 
+from vector_quantize_pytorch import ResidualVQ, VectorQuantize
+
 import sys
 sys.path.append("..")
 import colormaps
@@ -102,6 +104,7 @@ def activate_stream(scene_index,
         return torch.save(valid_map, f'{scene_index}_valid_map_level_{lvl}.pt')
     else:
         return torch.save(valid_map, f'{scene_index}_valid_map_level_{lvl}_neg_{query_dim}.pt')
+    
 
 
 def lerf_localization(sem_map, image, clip_model, image_name, img_ann):
@@ -171,13 +174,36 @@ def evaluate(feat_dir, output_path, ae_ckpt_path, json_folder, mask_thresh, enco
         colormap_min=-1.0,
         colormap_max=1.0,
     )
-    
     # FIXME
     with torch.no_grad():
-        
-        lg_tensor_1 = torch.load(f'language_feats_dim3_tensor_{lvl}.pt')
-        lg_stacked_tensor = torch.unsqueeze(lg_tensor_1, 0).to(device)
 
+        
+        scene = "figurines"
+        
+        codebook_path = f"/n/holylfs05/LABS/pfister_lab/Lab/coxfs01/pfister_lab2/Lab/yingwei/LangSplat_vq/vq/{scene}/codebook_{lvl}.pt"
+        vq_path = f"/n/holylfs05/LABS/pfister_lab/Lab/coxfs01/pfister_lab2/Lab/yingwei/LangSplat_vq/vq/{scene}/vq_{lvl}.pt"
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        vq_layer = VectorQuantize(
+            dim=3,           
+            codebook_size=640, 
+            commitment_weight =0.1,      
+            use_cosine_sim = True
+        ).to(device)
+        vq_layer.load_state_dict(torch.load(vq_path, map_location=torch.device('cpu')))
+
+
+        
+        codebook = torch.load(codebook_path)['codebook']
+        #indices = torch.load(codebook_path)['indices']
+        
+        # decode to K x 512
+        # ae_ckpt_path = f"autoencoder/ckpt/{scene}/best_ckpt.pth"
+        # checkpoint = torch.load(ae_ckpt_path, map_location=device)
+        
+        
+        lg_tensor_1 = codebook
+        lg_stacked_tensor = torch.unsqueeze(lg_tensor_1, 0).to(device)
+       
         # #print("lg_stacked_tensor shape", lg_stacked_tensor.shape)
         # lg_tensor_2 = torch.load('language_feats_dim3_tensor_2.pt')
         # lg_tensor_3 = torch.load('language_feats_dim3_tensor_3.pt')
@@ -193,7 +219,7 @@ def evaluate(feat_dir, output_path, ae_ckpt_path, json_folder, mask_thresh, enco
     #     for j, idx in enumerate(eval_index_list):
     #         compressed_sem_feats[i][j] = np.load(feat_paths_lvl[idx])
 
-    
+
     # instantiate autoencoder and openclip
     clip_model = OpenCLIPNetwork(device)
     checkpoint = torch.load(ae_ckpt_path, map_location=device)
@@ -218,10 +244,11 @@ def evaluate(feat_dir, output_path, ae_ckpt_path, json_folder, mask_thresh, enco
         #     print("sem_feat.flatten(0, 2) shape", sem_feat.flatten(0, 2).shape)
         #     restored_feat = model.decode(sem_feat.flatten(0, 2))
         #     restored_feat = restored_feat.view(lvl, h, w, -1)           # 3x832x1264x512
-            lg_stacked_tensor_decoded = model.decode(lg_stacked_tensor) # 1 x N x 512
+            lg_stacked_tensor_decoded = model.decode(lg_stacked_tensor) # 3 x N x 512
 
         img_ann = gt_ann[f'{idx}']
         clip_model.set_positives(list(img_ann.keys()))
+        # get keys
         # print(list(img_ann.keys()))
 
         # continue        
@@ -230,7 +257,11 @@ def evaluate(feat_dir, output_path, ae_ckpt_path, json_folder, mask_thresh, enco
         for query in range(-1, 4):
             activate_stream(j, lg_stacked_tensor_decoded, rgb_img, clip_model, image_name, img_ann,
                                             thresh=mask_thresh, colormap_options=colormap_options, lvl=lvl, query_dim=query)
+        # chosen_iou_all.extend(c_iou_list)
+        # chosen_lvl_list.extend(c_lvl)
 
+        # acc_num_img = lerf_localization(restored_feat, rgb_img, clip_model, image_name, img_ann)
+        # acc_num += acc_num_img
         print("scene done")
         assert False
 

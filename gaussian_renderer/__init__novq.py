@@ -137,46 +137,6 @@ def render(scene_idx, viewpoint_camera, pc : GaussianModel, pipe, bg_color : tor
         selected_similarity_neg_2 = neg_2[0, :, pos_index].unsqueeze(1)
         selected_similarity_neg_3 = neg_3[0, :, pos_index].unsqueeze(1)
         
-        lvl = 1
-        scene = "figurines"
-        codebook_path = f"/n/holylfs05/LABS/pfister_lab/Lab/coxfs01/pfister_lab2/Lab/yingwei/LangSplat_vq/vq/{scene}/codebook_{lvl}.pt"
-        vq_path = f"/n/holylfs05/LABS/pfister_lab/Lab/coxfs01/pfister_lab2/Lab/yingwei/LangSplat_vq/vq/{scene}/vq_{lvl}.pt"
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        vq_layer = VectorQuantize(
-            dim=3,           
-            codebook_size=640,
-            commitment_weight =0.1,      
-            use_cosine_sim = True
-        ).to(device)
-        vq_layer.load_state_dict(torch.load(vq_path, map_location=torch.device('cpu')))
-
-
-        
-        codebook = torch.load(codebook_path)['codebook']
-        indices = torch.load(codebook_path)['indices']
-
-        vq_layer.codebook = codebook
-
-        vq_layer.eval()
-        
-        
-        print("selected_similarity_pos shape", selected_similarity_pos.shape)
-        print("selected_similarity_neg_0 shape", selected_similarity_neg_0.shape)
-        
-
-
-     
-        def restore_shape(data, indices):
-            N = indices.shape[0]
-            restored = torch.zeros((N, data.shape[-1]), dtype=data.dtype) 
-            restored = data[indices] 
-            return restored
-
-        selected_similarity_pos = restore_shape(selected_similarity_pos, indices).squeeze(0)
-        selected_similarity_neg_0 = restore_shape(selected_similarity_neg_0, indices).squeeze(0)
-        selected_similarity_neg_1 = restore_shape(selected_similarity_neg_1, indices).squeeze(0)
-        selected_similarity_neg_2 = restore_shape(selected_similarity_neg_2, indices).squeeze(0)
-        selected_similarity_neg_3 = restore_shape(selected_similarity_neg_3, indices).squeeze(0)
 
         selected_similarity = torch.cat((selected_similarity_pos, selected_similarity_neg_0, selected_similarity_neg_1, selected_similarity_neg_2, selected_similarity_neg_3), dim=1)
         end_time = time.time()
