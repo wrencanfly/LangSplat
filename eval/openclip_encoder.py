@@ -78,17 +78,22 @@ class OpenCLIPNetwork:
         # ]
         # ***** pre version *****
         
-        scene_lst_int = [40, 104, 151, 194]
+        scene_lst_int = [5, 23, 59, 64, 80, 118, 127]
         scene_lst = [f'{num:05d}' for num in scene_lst_int]
-        positives_lst = [['old camera', 'toy elephant', 'waldo', 'tesla door handle', 'porcelain hand', 'rubber duck with hat', 'rubber duck with buoy', 'pink ice cream', 'red toy chair', 'green apple', 'pikachu', 'red apple', 'spatula', 'jake', 'toy cat statue', 'pirate hat', 'miffy'],
-                         ['rubics cube', 'green apple', 'green toy chair', 'jake', 'old camera', 'pink ice cream', 'pumpkin', 'red apple', 'rubber duck with hat', 'tesla door handle', 'spatula', 'rubber duck with buoy', 'pirate hat'],
-                         ['rubber duck with hat', 'rubics cube', 'toy elephant', 'green apple', 'jake', 'toy cat statue', 'pikachu', 'porcelain hand', 'red apple', 'waldo', 'pirate hat'],
-                         ['toy elephant', 'pink ice cream', 'porcelain hand', 'green apple', 'green toy chair', 'old camera', 'rubics cube', 'spatula', 'toy cat statue', 'waldo', 'rubber duck with buoy', 'pirate hat', 'miffy', 'bag', 'rubber duck with hat']]
+        positives_lst = [
+['chopsticks', 'egg', 'nori', 'bowl', 'napkin', 'sake cup', 'wavy noodles', 'kamaboko', 'plate', 'onion segments'],
+['bowl', 'chopsticks', 'egg', 'nori', 'wavy noodles', 'kamaboko', 'onion segments', 'corn'],
+['chopsticks', 'egg', 'sake cup', 'napkin', 'wavy noodles', 'kamaboko', 'corn', 'onion segments'],
+['bowl', 'egg', 'chopsticks', 'sake cup', 'wavy noodles', 'nori', 'napkin', 'kamaboko', 'plate', 'corn', 'onion segments'],
+['bowl', 'chopsticks', 'sake cup', 'nori', 'egg', 'wavy noodles', 'glass of water', 'kamaboko', 'spoon', 'napkin', 'plate', 'onion segments'],
+['nori', 'egg', 'sake cup', 'chopsticks', 'wavy noodles', 'kamaboko', 'corn', 'onion segments'],
+['glass of water', 'nori', 'egg', 'sake cup', 'bowl', 'chopsticks', 'wavy noodles', 'spoon', 'corn', 'onion segments', 'hand', 'plate', 'kamaboko', 'napkin']]
+
 
                     
         # Map positive_id to the corresponding file path
-        level = 2
-        case_name = "figurines"
+        level = 1
+        case_name = "ramen"
         positive_name = positives_lst[scene_index][positive_id]
         # positive_path = f"/datadrive/yingwei/LangSplat_prev_generate_maps/dataset/lerf_ovs/teatime/output/teatime_{level}_pos/train/scene_{scene_lst_int[scene_index]+1}/{positive_name}/ours_None/renders_npy/{scene_lst[scene_index]}.npy"
         positive_path = f"/datadrive/yingwei/LangSplat_prev_generate_maps/dataset/lerf_ovs/{case_name}/output/{case_name}_{level}/train/scene_{scene_lst_int[scene_index]}/{positive_name}/ours_None/renders_npy/{scene_lst[scene_index]}.npy"
@@ -206,7 +211,7 @@ class OpenCLIPNetwork:
         n_phrases = len(self.positives)
         n_phrases_sims = [None for _ in range(n_phrases)]
         
-        n_levels, h, w = 1, 728, 986
+        n_levels, h, w = 1, 731, 988
 
         n_levels_sims = [None for _ in range(n_levels)]
         for i in range(n_levels):
