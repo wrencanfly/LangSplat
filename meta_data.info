@@ -1,0 +1,19 @@
+# ramen
+    frame_lst =  [5, 23, 59, 64, 80, 118, 127]
+    positives_lst =[
+['chopsticks', 'egg', 'nori', 'bowl', 'napkin', 'sake cup', 'wavy noodles', 'kamaboko', 'plate', 'onion segments'],
+['bowl', 'chopsticks', 'egg', 'nori', 'wavy noodles', 'kamaboko', 'onion segments', 'corn'],
+['chopsticks', 'egg', 'sake cup', 'napkin', 'wavy noodles', 'kamaboko', 'corn', 'onion segments'],
+['bowl', 'egg', 'chopsticks', 'sake cup', 'wavy noodles', 'nori', 'napkin', 'kamaboko', 'plate', 'corn', 'onion segments'],
+['bowl', 'chopsticks', 'sake cup', 'nori', 'egg', 'wavy noodles', 'glass of water', 'kamaboko', 'spoon', 'napkin', 'plate', 'onion segments'],
+['nori', 'egg', 'sake cup', 'chopsticks', 'wavy noodles', 'kamaboko', 'corn', 'onion segments'],
+['glass of water', 'nori', 'egg', 'sake cup', 'bowl', 'chopsticks', 'wavy noodles', 'spoon', 'corn', 'onion segments', 'hand', 'plate', 'kamaboko', 'napkin']]
+
+
+# figurines
+    frame_lst =  [40, 104, 151, 194]
+    positives_lst =[
+['old camera', 'toy elephant', 'waldo', 'tesla door handle', 'porcelain hand', 'rubber duck with hat', 'rubber duck with buoy', 'pink ice cream', 'red toy chair', 'green apple', 'pikachu', 'red apple', 'spatula', 'jake', 'toy cat statue', 'pirate hat', 'miffy'],
+['rubics cube', 'green apple', 'green toy chair', 'jake', 'old camera', 'pink ice cream', 'pumpkin', 'red apple', 'rubber duck with hat', 'tesla door handle', 'spatula', 'rubber duck with buoy', 'pirate hat'],
+['rubber duck with hat', 'rubics cube', 'toy elephant', 'green apple', 'jake', 'toy cat statue', 'pikachu', 'porcelain hand', 'red apple', 'waldo', 'pirate hat'],
+['toy elephant', 'pink ice cream', 'porcelain hand', 'green apple', 'green toy chair', 'old camera', 'rubics cube', 'spatula', 'toy cat statue', 'waldo', 'rubber duck with buoy', 'pirate hat', 'miffy', 'bag', 'rubber duck with hat']]
