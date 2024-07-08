@@ -15,8 +15,10 @@ import math
 from diff_gaussian_rasterization import GaussianRasterizationSettings, GaussianRasterizer
 from scene.gaussian_model import GaussianModel
 from utils.sh_utils import eval_sh
+from vector_quantize_pytorch import ResidualVQ, VectorQuantize
 
-def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, opt, scaling_modifier = 1.0, override_color = None):
+
+def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, opt, scaling_modifier = 1.0, override_color = None, iteration = -1):
     """
     Render the scene. 
     
@@ -82,11 +84,80 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
             shs = pc.get_features
     else:
         colors_precomp = override_color
-
+        
     if opt.include_feature:
         language_feature_precomp = pc.get_language_feature
-        language_feature_precomp = language_feature_precomp/ (language_feature_precomp.norm(dim=-1, keepdim=True) + 1e-9)
-        # language_feature_precomp = torch.sigmoid(language_feature_precomp)
+        language_feature_precomp = language_feature_precomp / (language_feature_precomp.norm(dim=-1, keepdim=True) + 1e-9)
+
+        # print("current iteration", iteration)
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        vq = False
+        rvq_layer = False
+        if vq == True:
+            if iteration == -1:
+                # Define the vector quantization layer
+                if(rvq_layer):
+                    vq_layer = ResidualVQ(
+                        dim=3,              
+                        num_quantizers=8,    
+                        codebook_size=25,  
+                        commitment_weight=0.1
+                    ).to(device)
+                else:
+                    vq_layer = VectorQuantize(
+                        dim=3,           
+                        codebook_size=640,
+                        commitment_weight =0.1,      
+                        use_cosine_sim = True
+                    ).to(device)
+                    
+                vq_layer = vq_layer
+              
+                language_feature_precomp = language_feature_precomp.view(1, -1, 3)  # Shape: (1, 2147799, 3)
+
+
+                quantized_features, indices, _ = vq_layer(language_feature_precomp)
+                
+                # save
+                
+                if(rvq_layer):
+                    codebook = vq_layer.codebooks 
+                else:
+                    codebook = vq_layer.codebook 
+
+                torch.save(dict(codebook = codebook, indices = indices.to(torch.int16)), 'codebook.pt')
+                torch.save(vq_layer.state_dict(), "vq.pt")
+
+                
+                language_feature_precomp = quantized_features.view(-1, 3)  # Remove batch dimension for further processing
+
+            # LOAD
+            elif iteration == -2:
+                residual_vq_layer_loaded = ResidualVQ(
+                    dim=3,                 # Dimension of the embeddings (same as the language features)
+                    num_quantizers=8,      # Number of residual quantizers
+                    codebook_size=128,     # Number of embeddings in each codebook
+                    commitment_weight=0.1, # Commitment cost
+                ).to(device)
+                residual_vq_layer_loaded.load_state_dict(torch.load("vq.pt", map_location=torch.device('cpu')))
+
+                codebook = torch.load('codebook.pt')['codebook']
+                indices = torch.load('codebook.pt')['indices']
+
+                residual_vq_layer_loaded.codebook = codebook
+
+                residual_vq_layer_loaded.eval()
+
+                quantized_out = residual_vq_layer_loaded.get_codes_from_indices(indices)
+                language_feature_precomp = quantized_out.view(-1, 3)  # Remove batch dimension if necessary
+            else:
+                language_feature_precomp = language_feature_precomp
+
+        else:
+            language_feature_precomp = language_feature_precomp
+
+        
+        
     else:
         language_feature_precomp = torch.zeros((1,), dtype=opacity.dtype, device=opacity.device)
         
