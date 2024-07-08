@@ -25,12 +25,14 @@ from gaussian_renderer import GaussianModel
 def render_set(model_path, source_path, name, iteration, views, gaussians, pipeline, background, args):
 
 
-    frame_lst = [40, 104, 151, 194]
+    frame_lst =  [40, 104, 151, 194]
+    frame_lst =  [40]
+    positives_lst = [
+['old camera', 'toy elephant', 'waldo', 'tesla door handle', 'porcelain hand', 'rubber duck with hat', 'rubber duck with buoy', 'pink ice cream', 'red toy chair', 'green apple', 'pikachu', 'red apple', 'spatula', 'jake', 'toy cat statue', 'pirate hat', 'miffy'],
+['rubics cube', 'green apple', 'green toy chair', 'jake', 'old camera', 'pink ice cream', 'pumpkin', 'red apple', 'rubber duck with hat', 'tesla door handle', 'spatula', 'rubber duck with buoy', 'pirate hat'],
+['rubber duck with hat', 'rubics cube', 'toy elephant', 'green apple', 'jake', 'toy cat statue', 'pikachu', 'porcelain hand', 'red apple', 'waldo', 'pirate hat'],
+['toy elephant', 'pink ice cream', 'porcelain hand', 'green apple', 'green toy chair', 'old camera', 'rubics cube', 'spatula', 'toy cat statue', 'waldo', 'rubber duck with buoy', 'pirate hat', 'miffy', 'bag', 'rubber duck with hat']]
 
-    positives_lst = [['old camera', 'toy elephant', 'waldo', 'tesla door handle', 'porcelain hand', 'rubber duck with hat', 'rubber duck with buoy', 'pink ice cream', 'red toy chair', 'green apple', 'pikachu', 'red apple', 'spatula', 'jake', 'toy cat statue', 'pirate hat', 'miffy'],
-                    ['rubics cube', 'green apple', 'green toy chair', 'jake', 'old camera', 'pink ice cream', 'pumpkin', 'red apple', 'rubber duck with hat', 'tesla door handle', 'spatula', 'rubber duck with buoy', 'pirate hat'],
-                    ['rubber duck with hat', 'rubics cube', 'toy elephant', 'green apple', 'jake', 'toy cat statue', 'pikachu', 'porcelain hand', 'red apple', 'waldo', 'pirate hat'],
-                    ['toy elephant', 'pink ice cream', 'porcelain hand', 'green apple', 'green toy chair', 'old camera', 'rubics cube', 'spatula', 'toy cat statue', 'waldo', 'rubber duck with buoy', 'pirate hat', 'miffy', 'bag', 'rubber duck with hat']]
     
     # positives = ['stuffed bear', 'coffee mug', 'bag of cookies', 'sheep', 'apple', 'paper napkin', 'plate', 'tea in a glass', 'bear nose', 'three cookies', 'coffee']
     for scene_index, frame in enumerate(frame_lst):
@@ -68,8 +70,7 @@ def render_set(model_path, source_path, name, iteration, views, gaussians, pipel
                     else:
                         gt, mask = view.get_language_feature(os.path.join(source_path, args.language_features_name), feature_level=args.feature_level)
 
-                    assert False
-                    print("rendering shape", rendering.shape)
+
                     np.save(os.path.join(render_npy_path, '{0:05d}'.format(idx) + ".npy"), rendering.permute(1, 2, 0).cpu().numpy())
                     # np.save(os.path.join(gts_npy_path, '{0:05d}'.format(idx) + ".npy"), gt.permute(1, 2, 0).cpu().numpy())
                     
@@ -78,6 +79,7 @@ def render_set(model_path, source_path, name, iteration, views, gaussians, pipel
                     img = rendering[0, :, :].unsqueeze(0).repeat(3, 1, 1)
                     torchvision.utils.save_image(img, os.path.join(render_path, '{0:05d}'.format(idx) + ".png"))
                     # torchvision.utils.save_image(gt, os.path.join(gts_path, '{0:05d}'.format(idx) + ".png"))
+                    assert False
 
                 
 def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParams, skip_train : bool, skip_test : bool, args):
